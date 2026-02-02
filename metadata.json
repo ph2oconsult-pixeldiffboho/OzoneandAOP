@@ -1,0 +1,5 @@
+{
+  "name": "OzoneTreatmentPro - Water Engineering Simulator",
+  "description": "A high-fidelity simulation dashboard for ozone water treatment, modeling MIB/Geosmin removal, Bromate formation, and DOC reduction with AI-powered process optimization.",
+  "requestFramePermissions": []
+}
