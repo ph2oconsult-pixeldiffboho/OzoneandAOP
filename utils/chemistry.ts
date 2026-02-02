@@ -1,19 +1,18 @@
 
-import { OzoneSystemParams, WaterQualityParams, TreatmentResult } from '../types';
+import { OzoneSystemParams, WaterQualityParams, KineticParams, TreatmentResult } from '../types';
 
 /**
  * Advanced mechanistic model for Ozone + H2O2 (Peroxone) water treatment.
  * 
  * CORE KINETICS:
  * 1. MIB/Geosmin: Modeled via literature second-order rate constants (k_O3 and k_OH).
- *    - MIB: k_O3 = 0.45 M-1s-1, k_OH = 5.0e9 M-1s-1
- *    - Geosmin: k_O3 = 0.1 M-1s-1, k_OH = 7.8e9 M-1s-1
  * 2. Radical Production: Peroxone increases •OH flux significantly.
  * 3. Scavenging: DOC, pH, and Temperature adjust the radical lifetime.
  */
 export const calculateTreatmentResults = (
   system: OzoneSystemParams,
-  water: WaterQualityParams
+  water: WaterQualityParams,
+  kinetics: KineticParams
 ): TreatmentResult => {
   // 0. Ozone Residual & Radical Context
   const tempCorrection = 1 + (water.temperature - 20) * 0.02;
@@ -33,13 +32,17 @@ export const calculateTreatmentResults = (
   const phRadicalFactor = 1 + (water.ph - 7.0) * 0.5; // High pH = more OH radicals
   const scavengingImpact = 1 / (1 + (water.doc * 0.2)); 
   
-  // Effective k calculation (Pseudo-First Order derived from Second Order)
-  // removal = 1 - exp(-k_eff * Exposure)
+  // Exposure calculation linked to hydraulic contact time
   const exposure = (system.ozoneDose * t10) / 10;
   
-  // Rates scaled to represent relative reactivity
-  const k_eff_mib = 0.65 * aopFactor * phRadicalFactor * scavengingImpact * Math.pow(1.04, water.temperature - 20);
-  const k_eff_geosmin = 0.78 * aopFactor * phRadicalFactor * scavengingImpact * Math.pow(1.04, water.temperature - 20);
+  // Base multipliers derived from user-defined constants
+  // We use the OH constant as the primary driver since OH scavenging/radical pathway dominates for MIB/Geosmin
+  // Reference base: kOH = 5e9 corresponds to ~0.65 base factor in the model
+  const mibBaseFactor = (kinetics.mib_kOH / 5e9) * 0.65 + (kinetics.mib_kO3 * 0.01);
+  const geosminBaseFactor = (kinetics.geosmin_kOH / 7.8e9) * 0.78 + (kinetics.geosmin_kO3 * 0.01);
+
+  const k_eff_mib = mibBaseFactor * aopFactor * phRadicalFactor * scavengingImpact * Math.pow(1.04, water.temperature - 20);
+  const k_eff_geosmin = geosminBaseFactor * aopFactor * phRadicalFactor * scavengingImpact * Math.pow(1.04, water.temperature - 20);
 
   const mibFrac = Math.exp(-k_eff_mib * exposure);
   const geosminFrac = Math.exp(-k_eff_geosmin * exposure);
@@ -79,3 +82,4 @@ export const calculateTreatmentResults = (
     calculatedResidual: parseFloat(calculatedResidual.toFixed(2))
   };
 };
+
