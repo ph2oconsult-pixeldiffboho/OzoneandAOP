@@ -19,6 +19,13 @@ export interface WaterQualityParams {
   temperature: number; // °C
 }
 
+export interface KineticParams {
+  mib_kO3: number;
+  mib_kOH: number;
+  geosmin_kO3: number;
+  geosmin_kOH: number;
+}
+
 export interface TreatmentResult {
   bromate: number; // µg/L
   finalPh: number;
