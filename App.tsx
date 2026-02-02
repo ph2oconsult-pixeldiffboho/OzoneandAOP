@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { OzoneSystemParams, WaterQualityParams, TreatmentResult, AiAnalysis } from './types';
+import React, { useState, useMemo } from 'react';
+import { OzoneSystemParams, WaterQualityParams, AiAnalysis } from './types';
 import { calculateTreatmentResults } from './utils/chemistry';
 import { getExpertAnalysis } from './services/geminiService';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ComposedChart, Cell
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ComposedChart, Bar, PieChart, Pie, Cell, Legend
 } from 'recharts';
 
 const DEFAULT_SYSTEM_PARAMS: OzoneSystemParams = {
@@ -27,6 +27,8 @@ const DEFAULT_WATER_PARAMS: WaterQualityParams = {
   geosmin: 35,
   temperature: 15
 };
+
+const PATHWAY_COLORS = ['#3b82f6', '#f97316'];
 
 const App: React.FC = () => {
   const [systemParams, setSystemParams] = useState<OzoneSystemParams>(DEFAULT_SYSTEM_PARAMS);
@@ -52,9 +54,14 @@ const App: React.FC = () => {
 
   const triggerAiAnalysis = async () => {
     setIsAnalyzing(true);
-    const analysis = await getExpertAnalysis(systemParams, waterParams, results);
-    setAiAnalysis(analysis);
-    setIsAnalyzing(false);
+    try {
+      const analysis = await getExpertAnalysis(systemParams, waterParams, results);
+      setAiAnalysis(analysis);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const removalData = [
@@ -63,6 +70,8 @@ const App: React.FC = () => {
       Influent: waterParams.mib, 
       Effluent: results.finalMib, 
       removal: results.removalMibPercent,
+      kO3: "0.45",
+      kOH: "5.0e9",
       icon: 'fa-nose-slash'
     },
     { 
@@ -70,8 +79,15 @@ const App: React.FC = () => {
       Influent: waterParams.geosmin, 
       Effluent: results.finalGeosmin, 
       removal: results.removalGeosminPercent,
+      kO3: "0.10",
+      kOH: "7.8e9",
       icon: 'fa-wind'
     },
+  ];
+
+  const pathwayData = [
+    { name: 'Direct (O3)', value: systemParams.h2o2Dose > 0 ? 5 : 15 },
+    { name: 'Indirect (•OH)', value: systemParams.h2o2Dose > 0 ? 95 : 85 }
   ];
 
   const isAopActive = systemParams.h2o2Dose > 0;
@@ -79,7 +95,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
-      {/* Header */}
       <header className="bg-slate-900 text-white p-4 shadow-lg border-b border-blue-500">
         <div className="container mx-auto flex justify-between items-center">
           <div className="flex items-center space-x-3">
@@ -112,10 +127,8 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 container mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
         {/* Left Column: Inputs */}
         <div className="lg:col-span-4 space-y-6">
-          {/* Ozone System Configuration */}
           <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center">
@@ -146,7 +159,6 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          {/* Influent Water Quality */}
           <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50 border-b border-slate-200 px-4 py-3">
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center">
@@ -168,232 +180,162 @@ const App: React.FC = () => {
 
         {/* Right Column: Dashboard */}
         <div className="lg:col-span-8 space-y-6">
-          
-          {/* Top Row: General Metrics */}
+          {/* Summary Metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <MetricCard 
               label="Bromate" 
               value={`${results.bromate} µg/L`} 
               icon="fa-flask-vial" 
               color={results.bromate > 10 ? "text-red-600" : "text-emerald-600"} 
-              status={results.bromate > 10 ? "Above Limit" : (isAmmoniaInhibiting ? "Ammonia Inhibited" : "Safe")} 
+              status={results.bromate > 10 ? "Above Limit" : (isAopActive ? "Peroxide Inhibited" : (isAmmoniaInhibiting ? "Ammonia Inhibited" : "Safe"))} 
             />
             <MetricCard label="H₂O₂:O₃ Ratio" value={systemParams.ozoneDose > 0 ? (systemParams.h2o2Dose / systemParams.ozoneDose).toFixed(2) : "0.00"} icon="fa-balance-scale" color="text-orange-600" status="Mass Ratio" />
             <MetricCard label="CT Value" value={`${results.ctValue}`} icon="fa-calculator" color="text-indigo-600" status="mg·min/L" />
             <MetricCard label="T₁₀ Time" value={`${results.contactTimeT10} min`} icon="fa-clock" color="text-slate-600" />
           </div>
 
-          {/* Section: Disinfection LRVs */}
-          <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center">
-                <i className="fas fa-shield-virus mr-2 text-indigo-500"></i>
-                Disinfection Performance (LRV)
-              </h2>
-            </div>
-            <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-6">
-               <LrvProgress label="Virus" value={results.lrvVirus} target={4.0} icon="fa-virus" color="bg-red-500" />
-               <LrvProgress label="Bacteria" value={results.lrvBacteria} target={4.0} icon="fa-bacteria" color="bg-emerald-500" />
-               <LrvProgress label="Cryptosporidium" value={results.lrvProtozoa} target={4.0} icon="fa-bug" color="bg-blue-500" />
-            </div>
-          </section>
-
-          {/* Oxidation Performance Panel */}
+          {/* Kinetic & Mechanistic Panel */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold text-slate-800 border-l-4 border-blue-500 pl-3">
-                Oxidation Results
+              <h3 className="text-lg font-bold text-slate-800 border-l-4 border-indigo-500 pl-3">
+                Fundamental Kinetic Analysis
               </h3>
-              <div className="bg-blue-50 border border-blue-100 rounded px-2 py-1 flex items-center space-x-2">
-                <i className="fas fa-vial text-blue-500 text-[10px]"></i>
-                <span className="text-[10px] font-bold text-blue-600 uppercase">First-Order Kinetic Model</span>
+              <div className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1 flex items-center space-x-2">
+                <i className="fas fa-atom text-indigo-500 text-[10px]"></i>
+                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-tighter">Second-Order Model</span>
               </div>
             </div>
 
-            {/* Removal Performance Table */}
-            <div className="mb-6 overflow-hidden border border-slate-100 rounded-lg">
-              <table className="w-full text-sm text-left">
-                <thead className="text-[10px] text-slate-500 bg-slate-50 font-bold tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3 uppercase">Target Molecule</th>
-                    <th className="px-4 py-3">INFLUENT (ng/L)</th>
-                    <th className="px-4 py-3">EFFLUENT (ng/L)</th>
-                    <th className="px-4 py-3 text-right uppercase">Removal Efficiency</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {removalData.map((row) => (
-                    <tr key={row.name}>
-                      <td className="px-4 py-3 font-semibold text-slate-700 flex items-center">
-                        <i className={`fas ${row.icon} mr-2 text-slate-400 w-4`}></i>
-                        {row.name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{row.Influent} ng/L</td>
-                      <td className="px-4 py-3 font-medium text-slate-800">{row.Effluent.toFixed(2)} ng/L</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex flex-col items-end">
-                           <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-bold">{row.removal}%</span>
-                           <span className="text-[8px] text-slate-400 mt-0.5 uppercase tracking-tighter">Dose Dependent</span>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+              {/* Educational Explanation */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                  {/* Fixed LaTeX-style notation to avoid JSX variable resolution errors */}
+                  <h4 className="text-xs font-bold text-slate-700 uppercase mb-2">The Rate Law: r = -k [Oxidant] [Target]</h4>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    While removal percentages appear constant (First-Order), the underlying chemistry is <strong>Second-Order</strong>. 
+                    MIB and Geosmin react with both molecular ozone (O<sub>3</sub>) and hydroxyl radicals (•OH). 
+                    Because k<sub>OH</sub> is ≈ 10<sup>9</sup> times larger than k<sub>O3</sub>, these compounds are almost entirely 
+                    removed via the <strong>Indirect Pathway</strong>.
+                  </p>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  {removalData.map((d) => (
+                    <div key={d.name} className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">{d.name} Reaction Constants</div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-500">k<sub>O3</sub> (Direct)</span>
+                          <span className="font-mono font-bold">{d.kO3} M⁻¹s⁻¹</span>
                         </div>
-                      </td>
-                    </tr>
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-500">k<sub>OH</sub> (Radical)</span>
+                          <span className="font-mono font-bold text-indigo-600">{d.kOH} M⁻¹s⁻¹</span>
+                        </div>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </div>
+
+              {/* Pathway Contribution Chart */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center">
+                <h4 className="text-xs font-bold text-slate-700 uppercase mb-4 text-center w-full">Mechanistic Split</h4>
+                <div className="h-32 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pathwayData}
+                        innerRadius={25}
+                        outerRadius={45}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {pathwayData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={PATHWAY_COLORS[index % PATHWAY_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-2 space-y-1 w-full">
+                  {pathwayData.map((d, i) => (
+                    <div key={d.name} className="flex items-center justify-between text-[10px]">
+                      <div className="flex items-center">
+                        <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: PATHWAY_COLORS[i] }}></div>
+                        <span className="text-slate-500">{d.name}</span>
+                      </div>
+                      <span className="font-bold text-slate-700">{d.value}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            {/* Chart Area */}
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            {/* Performance Visualization */}
+            <div className="h-64 w-full border-t border-slate-100 pt-6">
+               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={removalData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" />
-                  <YAxis label={{ value: 'ng/L', angle: -90, position: 'insideLeft', style: {fontSize: 10, fill: '#94a3b8'} }} />
-                  <Tooltip cursor={{ fill: '#f8fafc' }} />
-                  <Bar dataKey="Influent" name="Influent" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={40} />
-                  <Bar dataKey="Effluent" name="Effluent" fill={isAopActive ? "#f97316" : "#3b82f6"} radius={[4, 4, 0, 0]} barSize={40} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 600}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} label={{ value: 'Concentration (ng/L)', angle: -90, position: 'insideLeft', style: {fontSize: 10, fill: '#94a3b8'} }} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                  <Bar dataKey="Influent" fill="#cbd5e1" barSize={30} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Effluent" fill={isAopActive ? "#f97316" : "#3b82f6"} barSize={30} radius={[4, 4, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-
-            {/* Kinetic Validation Panel */}
-            <div className="mt-8 p-4 bg-slate-50 border border-slate-200 rounded-xl">
-              <div className="flex items-start space-x-3">
-                <div className="bg-blue-600 text-white p-2 rounded-lg shadow-sm mt-1">
-                  <i className="fas fa-wave-square text-sm"></i>
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-tight mb-2 flex items-center">
-                    Kinetic Validation Insight
-                    <span className="ml-2 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Process Fact</span>
-                  </h4>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    Notice that as you adjust the Influent concentration of MIB or Geosmin, the <strong>% Removal remains stable</strong>. 
-                    This is because trace organics follow <strong>First-Order Kinetics</strong>. Their removal efficiency is driven exclusively by the 
-                    <span className="font-bold text-blue-700 italic"> Ozone Dose</span> and 
-                    <span className="font-bold text-blue-700 italic"> Contact Time</span>, not by the amount of contaminant present.
-                  </p>
-                  <div className="mt-3 flex space-x-4">
-                    <div className="text-[10px] flex items-center">
-                      <i className="fas fa-check text-emerald-500 mr-1"></i>
-                      <span className="text-slate-500 font-medium">Mass Removed scales with concentration</span>
-                    </div>
-                    <div className="text-[10px] flex items-center">
-                      <i className="fas fa-check text-emerald-500 mr-1"></i>
-                      <span className="text-slate-500 font-medium">% Removal scales with Ozone Dose</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* DOC Mineralization Section */}
-            <div className="mt-8 pt-6 border-t border-slate-100">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-2">
-                  <div className="bg-slate-100 p-2 rounded-lg text-emerald-500 shadow-sm">
-                    <i className="fas fa-leaf text-sm"></i>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-tight">Bulk DOC Mineralization (mg/L)</h4>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full text-[10px] font-bold border border-emerald-100">
-                    {results.removalDocPercent}% Mineralized
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center shadow-sm">
-                  <div>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Influent DOC</span>
-                    <span className="text-lg font-bold text-slate-600">{waterParams.doc} mg/L</span>
-                  </div>
-                  <div className="h-8 w-px bg-slate-100 mx-4"></div>
-                  <div className="text-right">
-                    <span className="text-[9px] font-bold text-blue-400 uppercase tracking-wider block mb-1">Effluent DOC</span>
-                    <span className="text-lg font-bold text-blue-700">{results.finalDoc.toFixed(2)} mg/L</span>
-                  </div>
-                </div>
-                <div className="p-3 bg-white border border-slate-200 rounded-xl text-[10px] text-slate-500 leading-tight flex items-center">
-                  <i className="fas fa-info-circle mr-3 text-blue-300 text-lg"></i>
-                  <span>
-                    <strong>Engineering Note:</strong> Mineralization (to CO₂) is lower than T&O removal because it requires breaking 
-                    every carbon bond, while MIB removal only requires molecular transformation.
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Bromate Control Strategy Note */}
-            <div className="mt-4 p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-[10px] text-indigo-700 leading-tight flex items-center">
-              <i className="fas fa-shield-halved mr-3 text-indigo-400 text-lg"></i>
-              <span>
-                <strong>Bromate Control:</strong> Influent Ammonia ({waterParams.ammonia} mg/L) is currently sequestering HOBr intermediates 
-                into bromamines, effectively blocking the $BrO_3^-$ formation pathway. Control is optimized at pH &lt; 8.0.
-              </span>
+            
+            <div className="mt-4 flex justify-center space-x-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <div className="flex items-center"><div className="w-3 h-3 bg-slate-300 rounded mr-2"></div> Influent</div>
+              <div className="flex items-center"><div className={`w-3 h-3 ${isAopActive ? 'bg-orange-500' : 'bg-blue-500'} rounded mr-2`}></div> Predicted Effluent</div>
             </div>
           </div>
 
-          {/* AI Insights */}
+          {/* AI Insights & Audit */}
           <section className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-6 shadow-sm">
             <h3 className="text-lg font-bold text-slate-800 flex items-center mb-4">
               <i className="fas fa-robot mr-2 text-indigo-500"></i>
-              Process Audit & Strategy
+              Process Engineering Audit
             </h3>
-
             {aiAnalysis ? (
               <div className="space-y-4">
-                <p className="text-slate-700 leading-relaxed text-sm bg-white/50 p-3 rounded-lg border border-white shadow-sm">
-                  {aiAnalysis.summary}
-                </p>
+                <p className="text-slate-700 text-sm bg-white/50 p-4 rounded-lg border border-white shadow-sm leading-relaxed">{aiAnalysis.summary}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-500 uppercase flex items-center">
-                      <i className="fas fa-check-circle mr-2 text-emerald-500"></i>
-                      Optimization
+                  <div className="bg-white/40 p-3 rounded-lg border border-white/60">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center">
+                      <i className="fas fa-lightbulb mr-2 text-amber-500"></i> Recommendations
                     </h4>
-                    <ul className="text-xs text-slate-600 space-y-1">
-                      {aiAnalysis.recommendations.map((rec, i) => (
-                        <li key={i} className="flex items-start">
-                          <span className="mr-2 text-blue-400">•</span>
-                          {rec}
-                        </li>
-                      ))}
+                    <ul className="text-xs text-slate-600 space-y-1.5">
+                      {aiAnalysis.recommendations.map((rec, i) => <li key={i} className="flex items-start"><span className="mr-2 text-blue-400">•</span>{rec}</li>)}
                     </ul>
                   </div>
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-500 uppercase flex items-center">
-                      <i className="fas fa-exclamation-triangle mr-2 text-amber-500"></i>
-                      Risks
+                  <div className="bg-white/40 p-3 rounded-lg border border-white/60">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center">
+                      <i className="fas fa-triangle-exclamation mr-2 text-red-500"></i> Risks & Warnings
                     </h4>
-                    <ul className="text-xs text-slate-600 space-y-1">
-                      {aiAnalysis.warnings.map((warn, i) => (
-                        <li key={i} className="flex items-start">
-                          <span className="mr-2 text-red-400">•</span>
-                          {warn}
-                        </li>
-                      ))}
+                    <ul className="text-xs text-slate-600 space-y-1.5">
+                      {aiAnalysis.warnings.map((warn, i) => <li key={i} className="flex items-start"><span className="mr-2 text-red-400">•</span>{warn}</li>)}
                     </ul>
                   </div>
                 </div>
               </div>
             ) : (
               <div className="text-center py-8">
-                <p className="text-slate-400 text-sm italic">Generate a detailed technical audit of performance.</p>
+                <div className="mb-4 text-slate-300"><i className="fas fa-microchip text-4xl"></i></div>
+                <p className="text-slate-400 text-sm italic">Request a process audit to evaluate kinetics and regulatory compliance.</p>
               </div>
             )}
           </section>
         </div>
       </main>
 
-      <footer className="bg-white border-t border-slate-200 p-4 mt-6">
-        <div className="container mx-auto text-center">
-          <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">
-            Data models derived from USEPA SWTR & AOP Research
-          </p>
-        </div>
+      <footer className="bg-white border-t border-slate-200 p-4 mt-6 text-center">
+        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+          High-Fidelity Mechanistic Simulation Suite | MIB & Geosmin 2nd-Order Dynamics
+        </p>
       </footer>
     </div>
   );
@@ -401,106 +343,28 @@ const App: React.FC = () => {
 
 // --- Helper Components ---
 
-interface LrvProgressProps {
-  label: string;
-  value: number;
-  target: number;
-  icon: string;
-  color: string;
-}
-
-const LrvProgress: React.FC<LrvProgressProps> = ({ label, value, target, icon, color }) => {
-  const percent = Math.min(100, (value / target) * 100);
-  const isPassing = value >= target;
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between items-end">
-        <div className="flex items-center space-x-2">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isPassing ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-            <i className={`fas ${icon}`}></i>
-          </div>
-          <div>
-            <div className="text-xs font-bold text-slate-700">{label}</div>
-            <div className="text-[10px] text-slate-400">Target: {target.toFixed(1)} Log</div>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className={`text-lg font-bold ${isPassing ? 'text-emerald-600' : 'text-slate-700'}`}>{value.toFixed(2)}</div>
-          <div className={`text-[8px] uppercase font-bold px-1 rounded ${isPassing ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-            {isPassing ? 'Passing' : 'Partial'}
-          </div>
-        </div>
-      </div>
-      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-        <div className={`h-full transition-all duration-700 ${isPassing ? 'bg-emerald-500' : color}`} style={{ width: `${percent}%` }}></div>
+const InputGroup: React.FC<{ label: string; value: number; unit: string; min: number; max: number; step: number; onChange: (v: number) => void; hideSlider?: boolean }> = ({ label, value, unit, min, max, step, onChange, hideSlider }) => (
+  <div className="flex flex-col space-y-1 group">
+    <div className="flex justify-between items-center text-xs font-semibold text-slate-600 transition-colors group-hover:text-blue-600">
+      <label>{label}</label>
+      <div className="flex items-center space-x-1">
+        <input type="number" value={value} step={step} className="w-16 px-1 border border-slate-200 rounded text-right focus:ring-1 focus:ring-blue-400 outline-none" onChange={(e) => onChange(parseFloat(e.target.value) || 0)} />
+        <span className="text-slate-400 text-[10px] w-8">{unit}</span>
       </div>
     </div>
-  );
-};
+    {!hideSlider && <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all" />}
+  </div>
+);
 
-interface InputGroupProps {
-  label: string;
-  value: number;
-  unit: string;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (val: number) => void;
-  hideSlider?: boolean;
-}
-
-const InputGroup: React.FC<InputGroupProps> = ({ label, value, unit, min, max, step, onChange, hideSlider }) => {
-  return (
-    <div className="flex flex-col space-y-1">
-      <div className="flex justify-between items-center text-xs">
-        <label className="font-semibold text-slate-600">{label}</label>
-        <div className="flex items-center space-x-1">
-          <input 
-            type="number" 
-            value={value} 
-            step={step}
-            className="w-16 px-1 py-0.5 border border-slate-200 rounded text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
-            onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-          />
-          <span className="text-slate-400 text-[10px] w-8">{unit}</span>
-        </div>
-      </div>
-      {!hideSlider && (
-        <input 
-          type="range" min={min} max={max} step={step} value={value}
-          onChange={(e) => onChange(parseFloat(e.target.value))}
-          className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer transition-all accent-blue-500 hover:accent-blue-400"
-        />
-      )}
+const MetricCard: React.FC<{ label: string; value: string; icon: string; color: string; status?: string }> = ({ label, value, icon, color, status }) => (
+  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:border-blue-200 transition-all cursor-default group">
+    <div className="flex justify-between items-start mb-2">
+      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{label}</span>
+      <i className={`fas ${icon} ${color} opacity-30 group-hover:opacity-100 transition-opacity`}></i>
     </div>
-  );
-};
-
-interface MetricCardProps {
-  label: string;
-  value: string;
-  icon: string;
-  color: string;
-  status?: string;
-}
-
-const MetricCard: React.FC<MetricCardProps> = ({ label, value, icon, color, status }) => {
-  return (
-    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-blue-200 transition-all hover:shadow-md cursor-default group">
-      <div className="flex justify-between items-start mb-2">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</span>
-        <i className={`fas ${icon} ${color} opacity-40 group-hover:opacity-100 transition-opacity`}></i>
-      </div>
-      <div>
-        <div className={`text-xl font-bold ${color}`}>{value}</div>
-        {status && (
-          <div className={`text-[10px] mt-1 font-bold ${status.includes("Inhibited") ? "text-blue-500" : (status === "Safe" ? "text-emerald-500" : "text-slate-400")}`}>
-            {status}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
+    <div className={`text-xl font-bold ${color}`}>{value}</div>
+    {status && <div className={`text-[10px] mt-1 font-bold ${status.includes("Inhibited") ? "text-blue-500" : (status === "Safe" ? "text-emerald-500" : "text-slate-400")}`}>{status}</div>}
+  </div>
+);
 
 export default App;
