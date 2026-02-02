@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { OzoneSystemParams, WaterQualityParams, KineticParams, AiAnalysis } from './types';
 import { calculateTreatmentResults } from './utils/chemistry';
 import { getExpertAnalysis } from './services/geminiService';
@@ -41,9 +41,16 @@ const App: React.FC = () => {
   const [systemParams, setSystemParams] = useState<OzoneSystemParams>(DEFAULT_SYSTEM_PARAMS);
   const [waterParams, setWaterParams] = useState<WaterQualityParams>(DEFAULT_WATER_PARAMS);
   const [kineticParams, setKineticParams] = useState<KineticParams>(DEFAULT_KINETIC_PARAMS);
+  const [useCustomKinetics, setUseCustomKinetics] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<AiAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [showAdvancedKinetics, setShowAdvancedKinetics] = useState(false);
+
+  // Revert kinetics to defaults if manual mode is disabled
+  useEffect(() => {
+    if (!useCustomKinetics) {
+      setKineticParams(DEFAULT_KINETIC_PARAMS);
+    }
+  }, [useCustomKinetics]);
 
   const results = useMemo(() => 
     calculateTreatmentResults(systemParams, waterParams, kineticParams), 
@@ -66,6 +73,7 @@ const App: React.FC = () => {
     setSystemParams(DEFAULT_SYSTEM_PARAMS);
     setWaterParams(DEFAULT_WATER_PARAMS);
     setKineticParams(DEFAULT_KINETIC_PARAMS);
+    setUseCustomKinetics(false);
     setAiAnalysis(null);
   };
 
@@ -87,8 +95,8 @@ const App: React.FC = () => {
       Influent: waterParams.mib, 
       Effluent: results.finalMib, 
       removal: results.removalMibPercent,
-      kO3: kineticParams.mib_kO3.toFixed(2),
-      kOH: kineticParams.mib_kOH.toExponential(1),
+      kO3: kineticParams.mib_kO3,
+      kOH: kineticParams.mib_kOH,
       icon: 'fa-nose-slash'
     },
     { 
@@ -96,14 +104,14 @@ const App: React.FC = () => {
       Influent: waterParams.geosmin, 
       Effluent: results.finalGeosmin, 
       removal: results.removalGeosminPercent,
-      kO3: kineticParams.geosmin_kO3.toFixed(2),
-      kOH: kineticParams.geosmin_kOH.toExponential(1),
+      kO3: kineticParams.geosmin_kO3,
+      kOH: kineticParams.geosmin_kOH,
       icon: 'fa-wind'
     },
   ];
 
   const pathwayData = [
-    { name: 'Direct (O3)', value: systemParams.h2o2Dose > 0 ? 5 : 15 },
+    { name: 'Direct (O₃)', value: systemParams.h2o2Dose > 0 ? 5 : 15 },
     { name: 'Indirect (•OH)', value: systemParams.h2o2Dose > 0 ? 95 : 85 }
   ];
 
@@ -144,7 +152,7 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 container mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Inputs */}
+        {/* Left Column: Input Panel */}
         <div className="lg:col-span-4 space-y-6">
           <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
@@ -184,55 +192,22 @@ const App: React.FC = () => {
               </h2>
             </div>
             <div className="p-4 space-y-4">
-              <InputGroup label="Temperature" value={waterParams.temperature} unit="°C" min={0} max={40} step={1} onChange={(v) => handleWaterChange('temperature', v)} />
-              <InputGroup label="pH" value={waterParams.ph} unit="pH" min={5} max={10} step={0.1} onChange={(v) => handleWaterChange('ph', v)} />
-              <InputGroup label="Bromide" value={waterParams.bromide} unit="µg/L" min={0} max={1000} step={10} onChange={(v) => handleWaterChange('bromide', v)} />
-              <InputGroup label="Ammonia" value={waterParams.ammonia} unit="mg/L" min={0} max={2} step={0.01} onChange={(v) => handleWaterChange('ammonia', v)} />
-              <InputGroup label="DOC" value={waterParams.doc} unit="mg/L" min={0.1} max={15} step={0.1} onChange={(v) => handleWaterChange('doc', v)} />
-              <InputGroup label="MIB" value={waterParams.mib} unit="ng/L" min={0} max={200} step={1} onChange={(v) => handleWaterChange('mib', v)} />
-              <InputGroup label="Geosmin" value={waterParams.geosmin} unit="ng/L" min={0} max={200} step={1} onChange={(v) => handleWaterChange('geosmin', v)} />
-            </div>
-          </section>
-
-          {/* Advanced Reaction Constants Section */}
-          <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <button 
-              onClick={() => setShowAdvancedKinetics(!showAdvancedKinetics)}
-              className="w-full bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center group"
-            >
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center">
-                <i className="fas fa-flask mr-2 text-purple-500"></i>
-                Reaction Constants
-              </h2>
-              <i className={`fas fa-chevron-right transition-transform text-slate-400 ${showAdvancedKinetics ? 'rotate-90' : ''}`}></i>
-            </button>
-            {showAdvancedKinetics && (
-              <div className="p-4 space-y-6">
-                <div className="space-y-3">
-                  <div className="text-[10px] font-bold text-purple-600 uppercase tracking-widest border-b border-purple-100 pb-1 flex justify-between">
-                    <span>MIB (2-Methylisoborneol)</span>
-                    <span>M⁻¹s⁻¹</span>
-                  </div>
-                  <InputGroup label="kO3 (Direct)" value={kineticParams.mib_kO3} unit="" min={0} max={10} step={0.01} onChange={(v) => handleKineticChange('mib_kO3', v)} hideSlider />
-                  <InputGroup label="kOH (Radical)" value={kineticParams.mib_kOH} unit="" min={1e8} max={1e10} step={1e8} onChange={(v) => handleKineticChange('mib_kOH', v)} hideSlider />
-                </div>
-                <div className="space-y-3">
-                  <div className="text-[10px] font-bold text-purple-600 uppercase tracking-widest border-b border-purple-100 pb-1 flex justify-between">
-                    <span>Geosmin</span>
-                    <span>M⁻¹s⁻¹</span>
-                  </div>
-                  <InputGroup label="kO3 (Direct)" value={kineticParams.geosmin_kO3} unit="" min={0} max={10} step={0.01} onChange={(v) => handleKineticChange('geosmin_kO3', v)} hideSlider />
-                  <InputGroup label="kOH (Radical)" value={kineticParams.geosmin_kOH} unit="" min={1e8} max={1e10} step={1e8} onChange={(v) => handleKineticChange('geosmin_kOH', v)} hideSlider />
-                </div>
-                <p className="text-[9px] text-slate-400 italic leading-tight">
-                  Values reflect second-order kinetics at 20°C. Typical range for kOH is 10⁹ M⁻¹s⁻¹.
-                </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+                <InputGroup label="Temperature" value={waterParams.temperature} unit="°C" min={0} max={40} step={1} onChange={(v) => handleWaterChange('temperature', v)} hideSlider />
+                <InputGroup label="pH" value={waterParams.ph} unit="pH" min={5} max={10} step={0.1} onChange={(v) => handleWaterChange('ph', v)} hideSlider />
+                <InputGroup label="Bromide" value={waterParams.bromide} unit="µg/L" min={0} max={1000} step={10} onChange={(v) => handleWaterChange('bromide', v)} hideSlider />
+                <InputGroup label="Ammonia" value={waterParams.ammonia} unit="mg/L" min={0} max={2} step={0.01} onChange={(v) => handleWaterChange('ammonia', v)} hideSlider />
               </div>
-            )}
+              <InputGroup label="DOC" value={waterParams.doc} unit="mg/L" min={0.1} max={15} step={0.1} onChange={(v) => handleWaterChange('doc', v)} />
+              <div className="grid grid-cols-2 gap-4">
+                <InputGroup label="MIB" value={waterParams.mib} unit="ng/L" min={0} max={200} step={1} onChange={(v) => handleWaterChange('mib', v)} hideSlider />
+                <InputGroup label="Geosmin" value={waterParams.geosmin} unit="ng/L" min={0} max={200} step={1} onChange={(v) => handleWaterChange('geosmin', v)} hideSlider />
+              </div>
+            </div>
           </section>
         </div>
 
-        {/* Right Column: Dashboard */}
+        {/* Right Column: Dashboard & Kinetics */}
         <div className="lg:col-span-8 space-y-6">
           {/* Summary Metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -248,43 +223,105 @@ const App: React.FC = () => {
             <MetricCard label="T₁₀ Time" value={`${results.contactTimeT10} min`} icon="fa-clock" color="text-slate-600" />
           </div>
 
-          {/* Kinetic & Mechanistic Panel */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+          {/* Mechanistic Analysis Panel with Manual Mode */}
+          <div className={`bg-white p-6 rounded-xl shadow-sm border transition-all duration-300 ${useCustomKinetics ? 'border-purple-300 ring-1 ring-purple-100' : 'border-slate-200'}`}>
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-bold text-slate-800 border-l-4 border-indigo-500 pl-3">
                 Fundamental Kinetic Analysis
               </h3>
-              <div className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1 flex items-center space-x-2">
-                <i className="fas fa-atom text-indigo-500 text-[10px]"></i>
-                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-tighter">Second-Order Model</span>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Manual Mode</span>
+                  <button 
+                    onClick={() => setUseCustomKinetics(!useCustomKinetics)}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${useCustomKinetics ? 'bg-purple-600' : 'bg-slate-300'}`}
+                  >
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${useCustomKinetics ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+                <div className="bg-indigo-50 border border-indigo-100 rounded px-2 py-1 flex items-center space-x-2">
+                  <i className="fas fa-atom text-indigo-500 text-[10px]"></i>
+                  <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-tighter">Second-order model</span>
+                </div>
               </div>
             </div>
+
+            {/* Pop-up Note for Manual Mode */}
+            {useCustomKinetics && (
+              <div className="mb-6 bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-start space-x-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="bg-indigo-600 text-white rounded-full p-2 shrink-0">
+                  <i className="fas fa-info-circle"></i>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-indigo-900 mb-1">Advanced Kinetic Override Enabled</h4>
+                  <p className="text-xs text-indigo-800 leading-relaxed">
+                    You can now manually define the <strong>second-order rate constants</strong> (M⁻¹s⁻¹) for target oxidation. 
+                    <strong> k<sub>O₃</sub></strong> represents the direct reaction with molecular ozone, while 
+                    <strong> k<sub>OH</sub></strong> represents the reaction with indirect hydroxyl radicals. 
+                    Enter site-specific constants derived from bench-scale testing or specific literature references to calibrate the mechanistic model.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
               {/* Educational Explanation */}
               <div className="lg:col-span-2 space-y-4">
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase mb-2">The Rate Law: r = -k [Oxidant] [Target]</h4>
+                  <h4 className="text-xs font-bold text-slate-700 mb-2 uppercase tracking-tighter italic font-serif tracking-widest">The rate law: r = -k [Oxidant] [Target]</h4>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    While removal percentages appear constant (First-Order), the underlying chemistry is <strong>Second-Order</strong>. 
-                    MIB and Geosmin react with both molecular ozone (O<sub>3</sub>) and hydroxyl radicals (•OH). 
-                    Because k<sub>OH</sub> is ≈ 10<sup>9</sup> times larger than k<sub>O3</sub>, these compounds are almost entirely 
+                    While removal percentages appear constant (First-Order), the underlying chemistry is <strong>Second-order</strong>. 
+                    MIB and Geosmin react with both molecular ozone (O₃) and hydroxyl radicals (•OH). 
+                    Because k<sub>OH</sub> is ≈ 10⁹ times larger than k<sub>O₃</sub>, these compounds are almost entirely 
                     removed via the <strong>Indirect Pathway</strong>.
                   </p>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-4">
                   {removalData.map((d) => (
-                    <div key={d.name} className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">{d.name} Applied Constants</div>
-                      <div className="space-y-1">
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-slate-500">k<sub>O3</sub> (Direct)</span>
-                          <span className="font-mono font-bold">{d.kO3} M⁻¹s⁻¹</span>
+                    <div key={d.name} className={`p-4 rounded-xl border transition-all ${useCustomKinetics ? 'bg-purple-50/30 border-purple-200 shadow-sm' : 'bg-white border-slate-200'}`}>
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{d.name}</div>
+                        {useCustomKinetics ? (
+                           <span className="text-[8px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded font-bold">EDITABLE</span>
+                        ) : (
+                           <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold">LITERATURE</span>
+                        )}
+                      </div>
+                      <div className="space-y-3">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] text-slate-500 mb-1 font-bold italic">k<sub>O₃</sub> <span className="not-italic font-normal">(Direct)</span></span>
+                          {useCustomKinetics ? (
+                            <div className="relative">
+                              <input 
+                                type="number" 
+                                step="0.01"
+                                value={d.name === 'MIB' ? kineticParams.mib_kO3 : kineticParams.geosmin_kO3}
+                                onChange={(e) => handleKineticChange(d.name === 'MIB' ? 'mib_kO3' : 'geosmin_kO3', parseFloat(e.target.value) || 0)}
+                                className="w-full bg-white border border-purple-200 rounded px-2 py-1 text-xs font-mono font-bold text-indigo-700 focus:ring-1 focus:ring-purple-400 outline-none"
+                              />
+                              <span className="absolute right-2 top-1.5 text-[8px] text-slate-400">M⁻¹s⁻¹</span>
+                            </div>
+                          ) : (
+                            <span className="font-mono font-bold text-slate-700 text-sm">{d.kO3.toFixed(2)} <span className="text-[9px] font-normal text-slate-400 ml-1">M⁻¹s⁻¹</span></span>
+                          )}
                         </div>
-                        <div className="flex justify-between text-[11px]">
-                          <span className="text-slate-500">k<sub>OH</sub> (Radical)</span>
-                          <span className="font-mono font-bold text-indigo-600">{d.kOH} M⁻¹s⁻¹</span>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] text-slate-500 mb-1 font-bold italic">k<sub>OH</sub> <span className="not-italic font-normal">(Radical)</span></span>
+                          {useCustomKinetics ? (
+                            <div className="relative">
+                              <input 
+                                type="number" 
+                                step="1e8"
+                                value={d.name === 'MIB' ? kineticParams.mib_kOH : kineticParams.geosmin_kOH}
+                                onChange={(e) => handleKineticChange(d.name === 'MIB' ? 'mib_kOH' : 'geosmin_kOH', parseFloat(e.target.value) || 0)}
+                                className="w-full bg-white border border-purple-200 rounded px-2 py-1 text-xs font-mono font-bold text-indigo-700 focus:ring-1 focus:ring-purple-400 outline-none"
+                              />
+                              <span className="absolute right-2 top-1.5 text-[8px] text-slate-400">M⁻¹s⁻¹</span>
+                            </div>
+                          ) : (
+                            <span className="font-mono font-bold text-indigo-600 text-sm">{d.kOH.toExponential(1)} <span className="text-[9px] font-normal text-slate-400 ml-1">M⁻¹s⁻¹</span></span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -293,15 +330,15 @@ const App: React.FC = () => {
               </div>
 
               {/* Pathway Contribution Chart */}
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center">
-                <h4 className="text-xs font-bold text-slate-700 uppercase mb-4 text-center w-full">Mechanistic Split</h4>
-                <div className="h-32 w-full">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col items-center justify-center">
+                <h4 className="text-xs font-bold text-slate-700 uppercase mb-4 text-center w-full tracking-wider">Mechanistic Split</h4>
+                <div className="h-40 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={pathwayData}
-                        innerRadius={25}
-                        outerRadius={45}
+                        innerRadius={30}
+                        outerRadius={55}
                         paddingAngle={5}
                         dataKey="value"
                       >
@@ -313,12 +350,12 @@ const App: React.FC = () => {
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="mt-2 space-y-1 w-full">
+                <div className="mt-4 space-y-2 w-full px-2">
                   {pathwayData.map((d, i) => (
                     <div key={d.name} className="flex items-center justify-between text-[10px]">
                       <div className="flex items-center">
-                        <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: PATHWAY_COLORS[i] }}></div>
-                        <span className="text-slate-500">{d.name}</span>
+                        <div className="w-2.5 h-2.5 rounded-full mr-2 shadow-sm" style={{ backgroundColor: PATHWAY_COLORS[i] }}></div>
+                        <span className="text-slate-500 font-medium">{d.name}</span>
                       </div>
                       <span className="font-bold text-slate-700">{d.value}%</span>
                     </div>
@@ -328,22 +365,22 @@ const App: React.FC = () => {
             </div>
 
             {/* Performance Visualization */}
-            <div className="h-64 w-full border-t border-slate-100 pt-6">
+            <div className="h-72 w-full border-t border-slate-100 pt-6">
                <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={removalData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 600}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} label={{ value: 'Concentration (ng/L)', angle: -90, position: 'insideLeft', style: {fontSize: 10, fill: '#94a3b8'} }} />
-                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
-                  <Bar dataKey="Influent" fill="#cbd5e1" barSize={30} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Effluent" fill={isAopActive ? "#f97316" : "#3b82f6"} barSize={30} radius={[4, 4, 0, 0]} />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 600, fill: '#475569'}} />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8'}} label={{ value: 'Concentration (ng/L)', angle: -90, position: 'insideLeft', offset: 0, style: {fontSize: 10, fill: '#94a3b8', fontWeight: 500} }} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
+                  <Bar dataKey="Influent" fill="#cbd5e1" barSize={35} radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="Effluent" fill={isAopActive ? "#f97316" : "#3b82f6"} barSize={35} radius={[6, 6, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
-            </div>
-            
-            <div className="mt-4 flex justify-center space-x-8 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              <div className="flex items-center"><div className="w-3 h-3 bg-slate-300 rounded mr-2"></div> Influent</div>
-              <div className="flex items-center"><div className={`w-3 h-3 ${isAopActive ? 'bg-orange-500' : 'bg-blue-500'} rounded mr-2`}></div> Predicted Effluent</div>
+              
+              <div className="mt-6 flex justify-center space-x-12 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                <div className="flex items-center"><div className="w-4 h-4 bg-slate-300 rounded-sm mr-2 shadow-inner"></div> Influent</div>
+                <div className="flex items-center"><div className={`w-4 h-4 ${isAopActive ? 'bg-orange-500' : 'bg-blue-500'} rounded-sm mr-2 shadow-inner`}></div> Predicted Effluent</div>
+              </div>
             </div>
           </div>
 
@@ -376,8 +413,8 @@ const App: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8">
-                <div className="mb-4 text-slate-300"><i className="fas fa-microchip text-4xl"></i></div>
+              <div className="text-center py-10">
+                <div className="mb-4 text-slate-300"><i className="fas fa-microchip text-5xl"></i></div>
                 <p className="text-slate-400 text-sm italic">Request a process audit to evaluate kinetics and regulatory compliance.</p>
               </div>
             )}
@@ -385,9 +422,9 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <footer className="bg-white border-t border-slate-200 p-4 mt-6 text-center">
+      <footer className="bg-white border-t border-slate-200 p-6 mt-6 text-center">
         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-          High-Fidelity Mechanistic Simulation Suite | MIB & Geosmin 2nd-Order Dynamics
+          High-Fidelity Mechanistic Simulation Suite | MIB & Geosmin 2nd-order dynamics
         </p>
       </footer>
     </div>
@@ -396,22 +433,34 @@ const App: React.FC = () => {
 
 // --- Helper Components ---
 
-const InputGroup: React.FC<{ label: string; value: number; unit: string; min: number; max: number; step: number; onChange: (v: number) => void; hideSlider?: boolean }> = ({ label, value, unit, min, max, step, onChange, hideSlider }) => (
-  <div className="flex flex-col space-y-1 group">
+const InputGroup: React.FC<{ label: string; value: number; unit: string; min: number; max: number; step: number; onChange: (v: number) => void; hideSlider?: boolean; disabled?: boolean }> = ({ label, value, unit, min, max, step, onChange, hideSlider, disabled }) => (
+  <div className={`flex flex-col space-y-1 group ${disabled ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
     <div className="flex justify-between items-center text-xs font-semibold text-slate-600 transition-colors group-hover:text-blue-600">
-      <label>{label}</label>
-      <div className="flex items-center space-x-1">
+      <label className="truncate">{label}</label>
+      <div className="flex items-center space-x-1 shrink-0">
         <input 
           type="number" 
           value={value} 
           step={step} 
-          className="w-20 px-1 border border-slate-200 rounded text-right focus:ring-1 focus:ring-blue-400 outline-none text-[11px]" 
+          disabled={disabled}
+          className="w-16 px-1 border border-slate-200 rounded text-right focus:ring-1 focus:ring-blue-400 outline-none text-[11px] disabled:bg-slate-50" 
           onChange={(e) => onChange(parseFloat(e.target.value) || 0)} 
         />
-        <span className="text-slate-400 text-[10px] w-8">{unit}</span>
+        <span className="text-slate-400 text-[10px] w-6 truncate">{unit}</span>
       </div>
     </div>
-    {!hideSlider && <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all" />}
+    {!hideSlider && (
+      <input 
+        type="range" 
+        min={min} 
+        max={max} 
+        step={step} 
+        value={value} 
+        disabled={disabled}
+        onChange={(e) => onChange(parseFloat(e.target.value))} 
+        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all" 
+      />
+    )}
   </div>
 );
 
