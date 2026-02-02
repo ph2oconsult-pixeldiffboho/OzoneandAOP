@@ -13,11 +13,11 @@ export const getExpertAnalysis = async (
 
   const prompt = `
     Analyze the following water ozone treatment simulation results as a senior water process engineer. 
-    ${isAop ? 'The system is operating in Peroxone (O3/H2O2) Advanced Oxidation Mode.' : 'The system is operating in standard Ozonation mode.'}
+    ${isAop ? 'The system is operating in Peroxone (O3/H2O2) Advanced Oxidation Mode. Note: In this mode, disinfection LRV credits are zeroed by design to reflect typical regulatory quenching constraints.' : 'The system is operating in standard Ozonation mode.'}
     Focus on oxidation (MIB/Geosmin/DOC), disinfection inactivation, and the molar ratio balance.
     
     TREATMENT GOALS:
-    - Target 4.0 Log inactivation for Viruses, Bacteria, and Cryptosporidium.
+    - Target log inactivation for Viruses, Bacteria, and Cryptosporidium (Credit capped at 4.00 log).
     - Bromate formation must stay below 10 µg/L.
     - Maximize MIB/Geosmin removal.
 
@@ -44,7 +44,7 @@ export const getExpertAnalysis = async (
     - Cryptosporidium LRV: ${result.lrvProtozoa}
     
     Provide a professional analysis in JSON format addressing safety, efficiency, and regulatory risk. 
-    Specifically comment on ${isAop ? 'the H2O2:O3 mass ratio (standard target is often 0.3-0.5 mg/mg)' : 'whether AOP should be considered for better taste and odor control'}.
+    Specifically comment on ${isAop ? 'the H2O2:O3 mass ratio (standard target is often 0.3-0.5 mg/mg) and the trade-off between oxidation performance and disinfection credit loss.' : 'whether AOP should be considered for better taste and odor control'}.
   `;
 
   try {
