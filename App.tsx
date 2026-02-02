@@ -1,11 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import { OzoneSystemParams, WaterQualityParams, AiAnalysis } from './types';
+import { OzoneSystemParams, WaterQualityParams, KineticParams, AiAnalysis } from './types';
 import { calculateTreatmentResults } from './utils/chemistry';
 import { getExpertAnalysis } from './services/geminiService';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, Bar, PieChart, Pie, Cell, Legend
+  ComposedChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
 
 const DEFAULT_SYSTEM_PARAMS: OzoneSystemParams = {
@@ -28,15 +28,27 @@ const DEFAULT_WATER_PARAMS: WaterQualityParams = {
   temperature: 15
 };
 
+const DEFAULT_KINETIC_PARAMS: KineticParams = {
+  mib_kO3: 0.45,
+  mib_kOH: 5.0e9,
+  geosmin_kO3: 0.10,
+  geosmin_kOH: 7.8e9
+};
+
 const PATHWAY_COLORS = ['#3b82f6', '#f97316'];
 
 const App: React.FC = () => {
   const [systemParams, setSystemParams] = useState<OzoneSystemParams>(DEFAULT_SYSTEM_PARAMS);
   const [waterParams, setWaterParams] = useState<WaterQualityParams>(DEFAULT_WATER_PARAMS);
+  const [kineticParams, setKineticParams] = useState<KineticParams>(DEFAULT_KINETIC_PARAMS);
   const [aiAnalysis, setAiAnalysis] = useState<AiAnalysis | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showAdvancedKinetics, setShowAdvancedKinetics] = useState(false);
 
-  const results = useMemo(() => calculateTreatmentResults(systemParams, waterParams), [systemParams, waterParams]);
+  const results = useMemo(() => 
+    calculateTreatmentResults(systemParams, waterParams, kineticParams), 
+    [systemParams, waterParams, kineticParams]
+  );
 
   const handleSystemChange = (key: keyof OzoneSystemParams, value: number) => {
     setSystemParams(prev => ({ ...prev, [key]: value }));
@@ -46,9 +58,14 @@ const App: React.FC = () => {
     setWaterParams(prev => ({ ...prev, [key]: value }));
   };
 
+  const handleKineticChange = (key: keyof KineticParams, value: number) => {
+    setKineticParams(prev => ({ ...prev, [key]: value }));
+  };
+
   const handleReset = () => {
     setSystemParams(DEFAULT_SYSTEM_PARAMS);
     setWaterParams(DEFAULT_WATER_PARAMS);
+    setKineticParams(DEFAULT_KINETIC_PARAMS);
     setAiAnalysis(null);
   };
 
@@ -70,8 +87,8 @@ const App: React.FC = () => {
       Influent: waterParams.mib, 
       Effluent: results.finalMib, 
       removal: results.removalMibPercent,
-      kO3: "0.45",
-      kOH: "5.0e9",
+      kO3: kineticParams.mib_kO3.toFixed(2),
+      kOH: kineticParams.mib_kOH.toExponential(1),
       icon: 'fa-nose-slash'
     },
     { 
@@ -79,8 +96,8 @@ const App: React.FC = () => {
       Influent: waterParams.geosmin, 
       Effluent: results.finalGeosmin, 
       removal: results.removalGeosminPercent,
-      kO3: "0.10",
-      kOH: "7.8e9",
+      kO3: kineticParams.geosmin_kO3.toFixed(2),
+      kOH: kineticParams.geosmin_kOH.toExponential(1),
       icon: 'fa-wind'
     },
   ];
@@ -176,6 +193,43 @@ const App: React.FC = () => {
               <InputGroup label="Geosmin" value={waterParams.geosmin} unit="ng/L" min={0} max={200} step={1} onChange={(v) => handleWaterChange('geosmin', v)} />
             </div>
           </section>
+
+          {/* Advanced Reaction Constants Section */}
+          <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <button 
+              onClick={() => setShowAdvancedKinetics(!showAdvancedKinetics)}
+              className="w-full bg-slate-50 border-b border-slate-200 px-4 py-3 flex justify-between items-center group"
+            >
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center">
+                <i className="fas fa-flask mr-2 text-purple-500"></i>
+                Reaction Constants
+              </h2>
+              <i className={`fas fa-chevron-right transition-transform text-slate-400 ${showAdvancedKinetics ? 'rotate-90' : ''}`}></i>
+            </button>
+            {showAdvancedKinetics && (
+              <div className="p-4 space-y-6">
+                <div className="space-y-3">
+                  <div className="text-[10px] font-bold text-purple-600 uppercase tracking-widest border-b border-purple-100 pb-1 flex justify-between">
+                    <span>MIB (2-Methylisoborneol)</span>
+                    <span>M⁻¹s⁻¹</span>
+                  </div>
+                  <InputGroup label="kO3 (Direct)" value={kineticParams.mib_kO3} unit="" min={0} max={10} step={0.01} onChange={(v) => handleKineticChange('mib_kO3', v)} hideSlider />
+                  <InputGroup label="kOH (Radical)" value={kineticParams.mib_kOH} unit="" min={1e8} max={1e10} step={1e8} onChange={(v) => handleKineticChange('mib_kOH', v)} hideSlider />
+                </div>
+                <div className="space-y-3">
+                  <div className="text-[10px] font-bold text-purple-600 uppercase tracking-widest border-b border-purple-100 pb-1 flex justify-between">
+                    <span>Geosmin</span>
+                    <span>M⁻¹s⁻¹</span>
+                  </div>
+                  <InputGroup label="kO3 (Direct)" value={kineticParams.geosmin_kO3} unit="" min={0} max={10} step={0.01} onChange={(v) => handleKineticChange('geosmin_kO3', v)} hideSlider />
+                  <InputGroup label="kOH (Radical)" value={kineticParams.geosmin_kOH} unit="" min={1e8} max={1e10} step={1e8} onChange={(v) => handleKineticChange('geosmin_kOH', v)} hideSlider />
+                </div>
+                <p className="text-[9px] text-slate-400 italic leading-tight">
+                  Values reflect second-order kinetics at 20°C. Typical range for kOH is 10⁹ M⁻¹s⁻¹.
+                </p>
+              </div>
+            )}
+          </section>
         </div>
 
         {/* Right Column: Dashboard */}
@@ -210,7 +264,6 @@ const App: React.FC = () => {
               {/* Educational Explanation */}
               <div className="lg:col-span-2 space-y-4">
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  {/* Fixed LaTeX-style notation to avoid JSX variable resolution errors */}
                   <h4 className="text-xs font-bold text-slate-700 uppercase mb-2">The Rate Law: r = -k [Oxidant] [Target]</h4>
                   <p className="text-xs text-slate-600 leading-relaxed">
                     While removal percentages appear constant (First-Order), the underlying chemistry is <strong>Second-Order</strong>. 
@@ -223,7 +276,7 @@ const App: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   {removalData.map((d) => (
                     <div key={d.name} className="p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">{d.name} Reaction Constants</div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">{d.name} Applied Constants</div>
                       <div className="space-y-1">
                         <div className="flex justify-between text-[11px]">
                           <span className="text-slate-500">k<sub>O3</sub> (Direct)</span>
@@ -348,7 +401,13 @@ const InputGroup: React.FC<{ label: string; value: number; unit: string; min: nu
     <div className="flex justify-between items-center text-xs font-semibold text-slate-600 transition-colors group-hover:text-blue-600">
       <label>{label}</label>
       <div className="flex items-center space-x-1">
-        <input type="number" value={value} step={step} className="w-16 px-1 border border-slate-200 rounded text-right focus:ring-1 focus:ring-blue-400 outline-none" onChange={(e) => onChange(parseFloat(e.target.value) || 0)} />
+        <input 
+          type="number" 
+          value={value} 
+          step={step} 
+          className="w-20 px-1 border border-slate-200 rounded text-right focus:ring-1 focus:ring-blue-400 outline-none text-[11px]" 
+          onChange={(e) => onChange(parseFloat(e.target.value) || 0)} 
+        />
         <span className="text-slate-400 text-[10px] w-8">{unit}</span>
       </div>
     </div>
